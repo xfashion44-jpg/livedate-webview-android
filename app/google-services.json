@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "761070838162",
+    "project_id": "dataing-8ecf9",
+    "storage_bucket": "dataing-8ecf9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:761070838162:android:2d61f4d3f47b6cf664e14b",
+        "android_client_info": {
+          "package_name": "com.dataapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBnLBOVqSysXRTwAXoHVXabaw6glXVK9cY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:761070838162:android:461b718ac1e915c564e14b",
+        "android_client_info": {
+          "package_name": "kr.freenote.livedate"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBnLBOVqSysXRTwAXoHVXabaw6glXVK9cY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

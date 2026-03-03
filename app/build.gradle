@@ -1,0 +1,64 @@
+plugins {
+    id 'com.android.application'
+    id 'com.google.gms.google-services'
+}
+
+def keystorePropsFile = rootProject.file("keystore.properties")
+def keystoreProps = new Properties()
+def hasReleaseSigning = false
+if (keystorePropsFile.exists()) {
+    keystoreProps.load(new FileInputStream(keystorePropsFile))
+    hasReleaseSigning = ["storeFile", "storePassword", "keyAlias", "keyPassword"]
+            .every { keystoreProps[it] != null && !keystoreProps[it].toString().trim().isEmpty() }
+}
+
+android {
+    namespace 'kr.freenote.livedate'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "kr.freenote.livedate"
+        minSdk 23
+        targetSdk 34
+        versionCode 25
+        versionName "1.0.24"
+    }
+
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile file(keystoreProps["storeFile"])
+                storePassword keystoreProps["storePassword"]
+                keyAlias keystoreProps["keyAlias"]
+                keyPassword keystoreProps["keyPassword"]
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'com.onesignal:OneSignal:4.8.6'
+    // google-webrtc old coordinates are often unavailable; use Maven Central mirror build.
+    implementation 'io.github.webrtc-sdk:android:125.6422.07'
+}

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/call_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#10141d">
+
+    <org.webrtc.SurfaceViewRenderer
+        android:id="@+id/remote_renderer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <org.webrtc.SurfaceViewRenderer
+        android:id="@+id/local_renderer"
+        android:layout_width="130dp"
+        android:layout_height="180dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="14dp" />
+
+    <TextView
+        android:id="@+id/call_status_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="14dp"
+        android:layout_marginTop="16dp"
+        android:text="네이티브 통화 연결 중..."
+        android:textColor="#EAF0FF"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_margin="12dp"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_mic"
+            android:layout_width="0dp"
+            android:layout_height="46dp"
+            android:layout_marginEnd="8dp"
+            android:layout_weight="1"
+            android:backgroundTint="#1f2b45"
+            android:text="마이크 끄기"
+            android:textColor="#FFFFFF" />
+
+        <Button
+            android:id="@+id/btn_cam"
+            android:layout_width="0dp"
+            android:layout_height="46dp"
+            android:layout_marginEnd="8dp"
+            android:layout_weight="1"
+            android:backgroundTint="#1f2b45"
+            android:text="카메라 끄기"
+            android:textColor="#FFFFFF" />
+
+        <Button
+            android:id="@+id/btn_end"
+            android:layout_width="0dp"
+            android:layout_height="46dp"
+            android:layout_weight="1"
+            android:backgroundTint="#b14052"
+            android:text="종료"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+
+</FrameLayout>
+
