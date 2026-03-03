@@ -69,6 +69,8 @@ foreach ($s in $serials) {
 
     if ($ok) {
         Write-Host "    ✅ Success"
+        # 설치 후 자동 실행
+        adb -s $s shell am start -n kr.freenote.livedate/kr.freenote.livedate.SplashActivity
     } else {
         Write-Host "    ❌ Failed"
         Write-Host $out
