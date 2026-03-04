@@ -70,6 +70,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Log.i(TAG, "MAIN onCreate taskId=" + getTaskId());
 
         fileChooserLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
@@ -244,6 +245,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        Log.i(TAG, "MAIN onNewIntent taskId=" + getTaskId());
         applyLaunchIntent(intent);
     }
 
@@ -630,14 +632,32 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        Log.i(TAG, "MAIN onResume url=" + (webView == null ? "null" : webView.getUrl()));
+        Log.i(TAG, "MAIN onResume taskId=" + getTaskId() + " url=" + (webView == null ? "null" : webView.getUrl()));
         applyPendingForcedReturnUrl();
         nativeCallLaunching = false;
     }
 
     @Override
+    protected void onStart() {
+        super.onStart();
+        Log.i(TAG, "MAIN onStart taskId=" + getTaskId());
+    }
+
+    @Override
+    protected void onPause() {
+        Log.i(TAG, "MAIN onPause taskId=" + getTaskId());
+        super.onPause();
+    }
+
+    @Override
+    protected void onStop() {
+        Log.i(TAG, "MAIN onStop taskId=" + getTaskId());
+        super.onStop();
+    }
+
+    @Override
     protected void onDestroy() {
-        Log.i(TAG, "MAIN onDestroy");
+        Log.i(TAG, "MAIN onDestroy taskId=" + getTaskId());
         restoreAudioMode();
         nativeCallLaunching = false;
         if (filePathCallback != null) {

@@ -1022,7 +1022,17 @@ public class CallActivity extends AppCompatActivity {
         } catch (Exception e) {
             Log.i(TAG, ts() + " returnToInbox markPending failed=" + e.getClass().getSimpleName());
         }
-        Log.i(TAG, ts() + " returnToInbox finishOnly=true");
+        try {
+            Intent intent = new Intent(this, MainActivity.class);
+            intent.putExtra("app_url", RETURN_URL_PAGE4);
+            intent.putExtra("force_load", true);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            startActivity(intent);
+            Log.i(TAG, ts() + " returnToInbox relaunchMain ok taskId=" + getTaskId());
+        } catch (Exception e) {
+            Log.i(TAG, ts() + " returnToInbox relaunchMain failed=" + e.getClass().getSimpleName());
+        }
+        Log.i(TAG, ts() + " returnToInbox finishOnly=false");
         if (!isFinishing()) finish();
     }
 
