@@ -4,6 +4,7 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
@@ -47,6 +48,8 @@ public class MainActivity extends AppCompatActivity {
     private static final String HOME_URL = "https://freenote.kr/";
     private static final String ONESIGNAL_APP_ID = "bb7af6d9-e8c8-41d4-a25c-c4272f661e7c";
     private static final String EXTRA_FORCE_LOAD = "force_load";
+    private static final String CALL_RETURN_PREFS = "livedate_call_return";
+    private static final String KEY_FORCE_RETURN_URL = "force_return_url";
 
     private WebView webView;
     private SwipeRefreshLayout swipeRefreshLayout;
@@ -628,6 +631,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         Log.i(TAG, "MAIN onResume url=" + (webView == null ? "null" : webView.getUrl()));
+        applyPendingForcedReturnUrl();
         nativeCallLaunching = false;
     }
 
@@ -644,5 +648,20 @@ public class MainActivity extends AppCompatActivity {
             webView.destroy();
         }
         super.onDestroy();
+    }
+
+    private void applyPendingForcedReturnUrl() {
+        if (webView == null) return;
+        try {
+            SharedPreferences prefs = getSharedPreferences(CALL_RETURN_PREFS, MODE_PRIVATE);
+            String forceUrl = prefs.getString(KEY_FORCE_RETURN_URL, "").trim();
+            if (forceUrl.isEmpty()) return;
+            prefs.edit().remove(KEY_FORCE_RETURN_URL).apply();
+            Log.i(TAG, "MAIN applyPendingForcedReturnUrl=" + forceUrl);
+            webView.clearHistory();
+            webView.loadUrl(forceUrl);
+        } catch (Exception e) {
+            Log.i(TAG, "MAIN applyPendingForcedReturnUrl failed=" + e.getClass().getSimpleName());
+        }
     }
 }

@@ -1,6 +1,7 @@
 package kr.freenote.livedate;
 
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.util.Log;
 import android.os.Bundle;
 import android.os.Handler;
@@ -81,6 +82,9 @@ public class CallActivity extends AppCompatActivity {
     private static final String PULL_ENDPOINT = BASE_URL + "/toast/call_signal_pull.php";
     private static final String RESET_ENDPOINT = BASE_URL + "/toast/call_signal_reset.php";
     private static final String ICE_SERVERS_ENDPOINT = BASE_URL + "/toast/ice_servers.php";
+    private static final String CALL_RETURN_PREFS = "livedate_call_return";
+    private static final String KEY_FORCE_RETURN_URL = "force_return_url";
+    private static final String RETURN_URL_PAGE4 = "https://freenote.kr/page_4.php";
 
     private SurfaceViewRenderer remoteRenderer;
     private SurfaceViewRenderer localRenderer;
@@ -1012,23 +1016,14 @@ public class CallActivity extends AppCompatActivity {
         }
         finishing = true;
         logAudioManagerState("hangupRequested_beforeFinish");
-        boolean launched = false;
         try {
-            Intent intent = new Intent(this, MainActivity.class);
-            intent.putExtra("app_url", "https://freenote.kr/page_4.php");
-            intent.putExtra("force_load", true);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-            startActivity(intent);
-            launched = true;
+            SharedPreferences prefs = getSharedPreferences(CALL_RETURN_PREFS, MODE_PRIVATE);
+            prefs.edit().putString(KEY_FORCE_RETURN_URL, RETURN_URL_PAGE4).apply();
         } catch (Exception e) {
-            Log.i(TAG, ts() + " returnToInbox explicitLaunch failed=" + e.getClass().getSimpleName());
+            Log.i(TAG, ts() + " returnToInbox markPending failed=" + e.getClass().getSimpleName());
         }
-        Log.i(TAG, ts() + " returnToInbox launched=" + launched);
-        if (launched) {
-            if (!isFinishing()) finish();
-        } else {
-            finish();
-        }
+        Log.i(TAG, ts() + " returnToInbox finishOnly=true");
+        if (!isFinishing()) finish();
     }
 
     private String ts() {
