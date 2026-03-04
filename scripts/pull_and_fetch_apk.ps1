@@ -3,71 +3,188 @@ param(
     [string]$Repo = "xfashion44-jpg/livedate-webview-android",
     [string]$Workflow = "Android Debug APK",
     [string]$ArtifactName = "app-debug-apk",
-    [string]$ArtifactsDir = ".\\artifacts"
+    [string]$ArtifactsDir = ".\\artifacts",
+    [switch]$SkipGitPull
 )
 
 $ErrorActionPreference = "Stop"
+$script:GhExe = $null
 
 function Require-Cmd([string]$Name) {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-        throw "필수 명령어가 없습니다: $Name"
+        throw "Required command not found: $Name"
     }
 }
 
-Write-Host "[1/6] 환경 확인..."
+function Resolve-GhExe() {
+    $cmd = Get-Command gh -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) { return $cmd.Source }
+    $candidates = @(
+        "$env:ProgramFiles\\GitHub CLI\\gh.exe",
+        "$env:LOCALAPPDATA\\Microsoft\\WinGet\\Links\\gh.exe"
+    )
+    foreach ($p in $candidates) {
+        if (Test-Path $p) { return $p }
+    }
+    return $null
+}
+
+function Invoke-GhJson([string[]]$GhArgs) {
+    $jsonText = & $script:GhExe @GhArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "gh command failed: gh $($GhArgs -join ' ')"
+    }
+    if (-not $jsonText) {
+        return $null
+    }
+    try {
+        return ($jsonText | ConvertFrom-Json)
+    } catch {
+        $raw = ($jsonText | Out-String).Trim()
+        throw "gh returned non-JSON output. Raw: $raw"
+    }
+}
+
+Write-Host "[1/9] Checking required tools..."
 Require-Cmd "git"
-Require-Cmd "gh"
+Require-Cmd "adb"
+$script:GhExe = Resolve-GhExe
+if (-not $script:GhExe) {
+    throw "Required command not found: gh"
+}
 
 $resolvedRepoRoot = (Resolve-Path $RepoRoot).Path
 Set-Location $resolvedRepoRoot
 
-Write-Host "[2/6] Git 상태 확인..."
-$status = git status --porcelain
-if ($status) {
-    Write-Host "로컬 변경사항이 있습니다. pull을 중단합니다."
-    Write-Host "아래 변경사항을 먼저 커밋/스태시/정리하세요:"
-    Write-Host $status
-    exit 2
+Write-Host "[2/9] Checking git status..."
+$statusLines = @(git status --porcelain)
+$statusForPull = @(
+    $statusLines |
+        Where-Object {
+            $_ -notmatch '^\?\?\s+artifacts_test([\\/]|$)'
+        }
+)
+
+$hasLocalChanges = $statusForPull.Count -gt 0
+if ($hasLocalChanges) {
+    Write-Host "Local changes detected."
+    Write-Host ($statusForPull -join "`n")
 }
 
-Write-Host "[3/6] Git pull..."
-git pull
+if ($SkipGitPull) {
+    Write-Host "[3/9] Skipping git pull by -SkipGitPull option."
+} elseif ($hasLocalChanges) {
+    Write-Host "[3/9] Skipping git pull due to local changes (download/install will continue)."
+} else {
+    Write-Host "[3/9] Pulling latest branch..."
+    git pull
+    if ($LASTEXITCODE -ne 0) {
+        throw "git pull failed"
+    }
+}
 
-Write-Host "[4/6] GitHub 인증 확인..."
-$authStatus = gh auth status 2>&1
+Write-Host "[4/9] Checking GitHub authentication..."
+& $script:GhExe auth status 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
-    throw "gh 인증이 필요합니다. 먼저 'gh auth login' 실행하세요."
+    throw "gh auth is required. Run 'gh auth login' first."
 }
 
-Write-Host "[5/6] 최신 Actions run 조회..."
-$runId = gh run list `
-    --repo $Repo `
-    --workflow $Workflow `
-    --limit 1 `
-    --json databaseId `
-    --jq '.[0].databaseId'
+Write-Host "[5/9] Resolving latest successful workflow run..."
+$runList = Invoke-GhJson @(
+    "run", "list",
+    "--repo", $Repo,
+    "--workflow", $Workflow,
+    "--status", "completed",
+    "--limit", "50",
+    "--json", "databaseId,headBranch,conclusion,status,displayTitle,createdAt"
+)
 
-if (-not $runId) {
-    throw "최신 run id를 찾지 못했습니다. workflow 이름을 확인하세요: $Workflow"
+if (-not $runList -or $runList.Count -eq 0) {
+    throw "No completed workflow runs found for '$Workflow'."
 }
 
+$candidateRuns = @(
+    $runList |
+        Where-Object { $_.headBranch -eq "main" -and $_.status -eq "completed" -and $_.conclusion -eq "success" } |
+        Select-Object -First 5
+)
+
+if ($candidateRuns.Count -eq 0) {
+    throw "No matching runs found (branch=main, status=completed, conclusion=success)."
+}
+
+$selectedRunId = $candidateRuns[0].databaseId
+Write-Host "  Selected RUN_ID: $selectedRunId"
+
+Write-Host "[6/9] Downloading APK artifact..."
 if (-not (Test-Path $ArtifactsDir)) {
     New-Item -ItemType Directory -Path $ArtifactsDir | Out-Null
 }
+Get-ChildItem -Path $ArtifactsDir -Recurse -Filter "*.apk" -File -ErrorAction SilentlyContinue |
+    Remove-Item -Force -ErrorAction SilentlyContinue
 
-Write-Host "[6/6] 아티팩트 다운로드..."
-gh run download $runId `
-    --repo $Repo `
-    --name $ArtifactName `
-    --dir $ArtifactsDir
-
-if ($LASTEXITCODE -ne 0) {
-    throw "아티팩트 다운로드 실패. artifact 이름을 확인하세요: $ArtifactName"
+$downloadOk = $false
+$finalRunId = $null
+foreach ($r in $candidateRuns) {
+    $runId = $r.databaseId
+    if (-not $runId) { continue }
+    Write-Host "  Trying RUN_ID: $runId"
+    & $script:GhExe run download "$runId" `
+        --repo $Repo `
+        --name $ArtifactName `
+        --dir $ArtifactsDir
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "  Download OK"
+        $downloadOk = $true
+        $finalRunId = $runId
+        break
+    }
+    Write-Host "  Download FAIL"
 }
 
-Write-Host ""
-Write-Host "완료:"
+if (-not $downloadOk) {
+    throw "All download attempts failed (max 5 runs). Artifact '$ArtifactName' not available."
+}
+
+Write-Host "[7/9] Verifying APK path..."
+$apkFile = Get-ChildItem -Path $ArtifactsDir -Recurse -Filter "*.apk" -File -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+if (-not $apkFile) {
+    throw "Download succeeded but no APK file was found under '$ArtifactsDir'."
+}
+$apkPath = $apkFile.FullName
+Write-Host "  APK: $apkPath"
+
+Write-Host "[8/9] Installing APK to connected devices..."
+$raw = adb devices
+$deviceLines = $raw | Select-String -Pattern "device$" | ForEach-Object { $_.ToString() }
+if (-not $deviceLines) {
+    throw "No connected devices. Check USB debugging and authorization."
+}
+
+$failed = $false
+foreach ($line in $deviceLines) {
+    $serial = ($line -split "\s+")[0].Trim()
+    if (-not $serial) { continue }
+    Write-Host "  Installing to: $serial"
+    $out = adb -s $serial install -r -d "$apkPath" 2>&1
+    if ($out -match "Success") {
+        Write-Host "    Install OK"
+    } else {
+        Write-Host "    Install FAIL"
+        Write-Host ($out -join "`n")
+        $failed = $true
+    }
+}
+
+if ($failed) {
+    throw "APK installation failed on one or more devices."
+}
+
+Write-Host "[9/9] Done"
 Write-Host "  RepoRoot    : $resolvedRepoRoot"
-Write-Host "  Run ID      : $runId"
+Write-Host "  Run ID      : $finalRunId"
 Write-Host "  Artifact    : $ArtifactName"
 Write-Host "  Output Dir  : $ArtifactsDir"
+Write-Host "  APK Path    : $apkPath"

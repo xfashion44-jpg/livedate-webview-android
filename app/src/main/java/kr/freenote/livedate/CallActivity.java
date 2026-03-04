@@ -260,6 +260,24 @@ public class CallActivity extends AppCompatActivity {
         logAudioManagerState("onStart");
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        logAudioManagerState("onResume");
+    }
+
+    @Override
+    protected void onPause() {
+        logAudioManagerState("onPause");
+        super.onPause();
+    }
+
+    @Override
+    protected void onStop() {
+        logAudioManagerState("onStop");
+        super.onStop();
+    }
+
     private void setupButtons() {
         micBtn.setOnClickListener(v -> {
             micOn = !micOn;
@@ -521,14 +539,24 @@ public class CallActivity extends AppCompatActivity {
                 Log.i(TAG, ts() + " AUDIO_FOCUS reason=" + reason + " result=" + focusResult);
             }
 
+            // 1) MODE_IN_COMMUNICATION first
             audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            logAudioManagerState("enforce_afterSetMode_" + reason);
+
             boolean externalConnected = hasWiredOrBluetoothOutput();
             if (externalConnected) {
+                Log.i(TAG, ts() + " AUDIO_ROUTE_SKIP reason=" + reason + " externalConnected=true");
                 audioManager.setSpeakerphoneOn(false);
-                selectPreferredCommunicationDevice(false);
+                logAudioManagerState("enforce_afterSetSpeaker_false_" + reason);
             } else {
+                // 2) Speakerphone fallback force
                 audioManager.setSpeakerphoneOn(true);
-                selectPreferredCommunicationDevice(true);
+                logAudioManagerState("enforce_afterSetSpeaker_true_" + reason);
+
+                // 3) Android 12+ communication device force to BUILTIN_SPEAKER
+                boolean commDeviceSet = trySetCommunicationDeviceToSpeaker();
+                Log.i(TAG, ts() + " AUDIO_COMM_DEVICE reason=" + reason + " speakerSetResult=" + commDeviceSet);
+                logAudioManagerState("enforce_afterSetCommDevice_" + reason);
             }
 
             try {
@@ -576,35 +604,25 @@ public class CallActivity extends AppCompatActivity {
         return false;
     }
 
-    private void selectPreferredCommunicationDevice(boolean preferSpeaker) {
-        if (audioManager == null) return;
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) return;
+    private boolean trySetCommunicationDeviceToSpeaker() {
+        if (audioManager == null) return false;
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) return false;
         try {
             AudioDeviceInfo target = null;
             for (AudioDeviceInfo dev : audioManager.getAvailableCommunicationDevices()) {
                 if (dev == null) continue;
                 int type = dev.getType();
-                if (preferSpeaker) {
-                    if (type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
-                        target = dev;
-                        break;
-                    }
-                } else {
-                    if (type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
-                            || type == AudioDeviceInfo.TYPE_WIRED_HEADSET
-                            || type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES) {
-                        target = dev;
-                        break;
-                    }
+                if (type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                    target = dev;
+                    break;
                 }
             }
             if (target != null) {
-                audioManager.setCommunicationDevice(target);
-            } else if (preferSpeaker) {
-                audioManager.clearCommunicationDevice();
+                return audioManager.setCommunicationDevice(target);
             }
         } catch (Exception ignored) {
         }
+        return false;
     }
 
     private void restoreAudioMode() {
