@@ -295,9 +295,8 @@ public class CallActivity extends AppCompatActivity {
         DefaultVideoDecoderFactory decoderFactory = new DefaultVideoDecoderFactory(eglBase.getEglBaseContext());
 
         audioDeviceModule = JavaAudioDeviceModule.builder(this)
-                // Device-specific HW AEC/NS can break uplink audio in some WebRTC builds.
-                .setUseHardwareAcousticEchoCanceler(false)
-                .setUseHardwareNoiseSuppressor(false)
+                .setUseHardwareAcousticEchoCanceler(true)
+                .setUseHardwareNoiseSuppressor(true)
                 .createAudioDeviceModule();
 
         peerConnectionFactory = PeerConnectionFactory.builder()
