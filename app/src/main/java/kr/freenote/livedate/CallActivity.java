@@ -65,10 +65,17 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class CallActivity extends AppCompatActivity {
     private static final String TAG = "LiveDateCall";
     private static final double REMOTE_AUDIO_TRACK_VOLUME = 8.0;
+    private static final int SIGNAL_CONNECT_TIMEOUT_MS = 10000;
+    private static final int SIGNAL_READ_TIMEOUT_MS = 10000;
+    private static final int POLL_CONNECT_TIMEOUT_MS = 5000;
+    private static final int POLL_READ_TIMEOUT_MS = 30000;
+    private static final long OFFER_START_DELAY_MS = 50L;
+    private static final long MAIN_RETURN_FINISH_DELAY_MS = 450L;
     private static final String BASE_URL = "https://freenote.kr";
     private static final String PUSH_ENDPOINT = BASE_URL + "/toast/call_signal_push.php";
     private static final String PULL_ENDPOINT = BASE_URL + "/toast/call_signal_pull.php";
@@ -153,6 +160,7 @@ public class CallActivity extends AppCompatActivity {
     private volatile long lastIceRestartAt = 0L;
     private volatile PeerConnection.SignalingState currentSignalingState = PeerConnection.SignalingState.STABLE;
     private volatile boolean forceRelayPolicy = false;
+    private final AtomicBoolean returningToInbox = new AtomicBoolean(false);
     private int localHostCandidates = 0;
     private int localSrflxCandidates = 0;
     private int localRelayCandidates = 0;
@@ -226,25 +234,21 @@ public class CallActivity extends AppCompatActivity {
         enforceCallAudioRoute("onCreate");
         logAudioManagerState("onCreate");
         setStatus("통화 초기화 중...");
+        setupButtons();
         networkExecutor.execute(() -> {
-            List<PeerConnection.IceServer> iceServers = fetchIceServersFromServer();
-            if (iceServers == null || iceServers.isEmpty()) {
-                iceServers = Collections.singletonList(
-                        PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
-                );
+            List<PeerConnection.IceServer> fetched = fetchIceServersFromServer();
+            List<PeerConnection.IceServer> initialIce = (fetched == null || fetched.isEmpty())
+                    ? Collections.singletonList(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
+                    : fetched;
+            if (isCaller) {
+                resetSignalsAsCaller();
             }
-            final List<PeerConnection.IceServer> finalIceServers = iceServers;
             mainHandler.post(() -> {
-                initWebRtc(finalIceServers);
-                setupButtons();
+                if (finishing) return;
+                initWebRtc(initialIce);
                 if (isCaller) {
-                    networkExecutor.execute(() -> {
-                        resetSignalsAsCaller();
-                        mainHandler.post(() -> {
-                            startPolling();
-                            mainHandler.postDelayed(this::createAndSendOffer, 500L);
-                        });
-                    });
+                    startPolling();
+                    mainHandler.postDelayed(this::createAndSendOffer, OFFER_START_DELAY_MS);
                 } else {
                     startPolling();
                     setStatus("상대 Offer 대기 중...");
@@ -772,13 +776,14 @@ public class CallActivity extends AppCompatActivity {
     }
 
     private void resetSignalsAsCaller() {
+        long startedAt = System.currentTimeMillis();
         try {
             String body = "room=" + URLEncoder.encode(room, "UTF-8");
             HttpURLConnection conn = (HttpURLConnection) new URL(RESET_ENDPOINT).openConnection();
             conn.setRequestMethod("POST");
             conn.setDoOutput(true);
-            conn.setConnectTimeout(10000);
-            conn.setReadTimeout(10000);
+            conn.setConnectTimeout(SIGNAL_CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(SIGNAL_READ_TIMEOUT_MS);
             conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
             if (cookieHeader != null && !cookieHeader.isEmpty()) {
                 conn.setRequestProperty("Cookie", cookieHeader);
@@ -788,18 +793,21 @@ public class CallActivity extends AppCompatActivity {
             }
             readResponse(conn);
             conn.disconnect();
+            Log.i(TAG, ts() + " RESET_SIGNALS done elapsedMs=" + (System.currentTimeMillis() - startedAt));
         } catch (Exception ignored) {
+            Log.i(TAG, ts() + " RESET_SIGNALS failed elapsedMs=" + (System.currentTimeMillis() - startedAt));
         }
     }
 
     private List<PeerConnection.IceServer> fetchIceServersFromServer() {
         List<PeerConnection.IceServer> out = new ArrayList<>();
         HttpURLConnection conn = null;
+        long startedAt = System.currentTimeMillis();
         try {
             conn = (HttpURLConnection) new URL(ICE_SERVERS_ENDPOINT).openConnection();
             conn.setRequestMethod("GET");
-            conn.setConnectTimeout(10000);
-            conn.setReadTimeout(10000);
+            conn.setConnectTimeout(SIGNAL_CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(SIGNAL_READ_TIMEOUT_MS);
             if (cookieHeader != null && !cookieHeader.isEmpty()) {
                 conn.setRequestProperty("Cookie", cookieHeader);
             }
@@ -833,8 +841,9 @@ public class CallActivity extends AppCompatActivity {
                     out.add(b.createIceServer());
                 }
             }
-            Log.i(TAG, ts() + " ICE_SERVERS_FETCHED count=" + out.size() + " forceRelay=" + forceRelayPolicy);
+            Log.i(TAG, ts() + " ICE_SERVERS_FETCHED count=" + out.size() + " forceRelay=" + forceRelayPolicy + " elapsedMs=" + (System.currentTimeMillis() - startedAt));
         } catch (Exception ignored) {
+            Log.i(TAG, ts() + " ICE_SERVERS_FETCH_FAILED elapsedMs=" + (System.currentTimeMillis() - startedAt));
         } finally {
             if (conn != null) {
                 try { conn.disconnect(); } catch (Exception ignored) {}
@@ -853,8 +862,8 @@ public class CallActivity extends AppCompatActivity {
                             + "&timeout_ms=25000";
                     HttpURLConnection conn = (HttpURLConnection) new URL(q).openConnection();
                     conn.setRequestMethod("GET");
-                    conn.setConnectTimeout(10000);
-                    conn.setReadTimeout(35000);
+                    conn.setConnectTimeout(POLL_CONNECT_TIMEOUT_MS);
+                    conn.setReadTimeout(POLL_READ_TIMEOUT_MS);
                     if (cookieHeader != null && !cookieHeader.isEmpty()) {
                         conn.setRequestProperty("Cookie", cookieHeader);
                     }
@@ -997,19 +1006,40 @@ public class CallActivity extends AppCompatActivity {
     }
 
     private void returnToInboxAndFinish() {
-        if (finishing) {
-            finish();
+        if (!returningToInbox.compareAndSet(false, true)) {
+            Log.i(TAG, ts() + " returnToInbox skipped duplicate call");
             return;
         }
+        finishing = true;
         logAudioManagerState("hangupRequested_beforeFinish");
+        boolean launched = false;
         try {
             Intent intent = new Intent(this, MainActivity.class);
             intent.putExtra("app_url", "https://freenote.kr/page_4.php");
-            intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             startActivity(intent);
-        } catch (Exception ignored) {
+            launched = true;
+        } catch (Exception e) {
+            Log.i(TAG, ts() + " returnToInbox primaryLaunch failed=" + e.getClass().getSimpleName());
         }
-        finish();
+        if (!launched) {
+            try {
+                Intent fallback = getPackageManager().getLaunchIntentForPackage(getPackageName());
+                if (fallback != null) {
+                    fallback.putExtra("app_url", "https://freenote.kr/page_4.php");
+                    fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                    startActivity(fallback);
+                    launched = true;
+                }
+            } catch (Exception e) {
+                Log.i(TAG, ts() + " returnToInbox fallbackLaunch failed=" + e.getClass().getSimpleName());
+            }
+        }
+        if (launched) {
+            mainHandler.postDelayed(this::finish, MAIN_RETURN_FINISH_DELAY_MS);
+        } else {
+            finish();
+        }
     }
 
     private String ts() {
