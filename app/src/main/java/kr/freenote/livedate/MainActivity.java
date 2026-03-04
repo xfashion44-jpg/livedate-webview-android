@@ -234,7 +234,7 @@ public class MainActivity extends AppCompatActivity {
                 if (webView.canGoBack()) {
                     webView.goBack();
                 } else {
-                    finish();
+                    webView.loadUrl("https://freenote.kr/page_4.php");
                 }
             }
         });
