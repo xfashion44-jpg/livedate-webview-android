@@ -4,7 +4,9 @@ param(
     [string]$Workflow = "Android Debug APK",
     [string]$ArtifactName = "app-debug-apk",
     [string]$ArtifactsDir = ".\\artifacts",
-    [switch]$SkipGitPull
+    [switch]$SkipGitPull,
+    [ValidateSet("throw", "fallback")]
+    [string]$DownloadFailurePolicy = "throw"
 )
 
 $ErrorActionPreference = "Stop"
@@ -143,17 +145,34 @@ foreach ($r in $candidateRuns) {
 }
 
 if (-not $downloadOk) {
-    throw "All download attempts failed (max 5 runs). Artifact '$ArtifactName' not available."
+    if ($DownloadFailurePolicy -eq "throw") {
+        throw "All download attempts failed (max 5 runs). Artifact '$ArtifactName' not available."
+    }
+    Write-Host "  Download failed for all candidates. Policy=fallback, switching to local APK."
 }
 
 Write-Host "[7/9] Verifying APK path..."
-$apkFile = Get-ChildItem -Path $ArtifactsDir -Recurse -Filter "*.apk" -File -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1
-if (-not $apkFile) {
-    throw "Download succeeded but no APK file was found under '$ArtifactsDir'."
+$apkPath = $null
+if ($downloadOk) {
+    $apkFile = Get-ChildItem -Path $ArtifactsDir -Recurse -Filter "*.apk" -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if (-not $apkFile) {
+        if ($DownloadFailurePolicy -eq "throw") {
+            throw "Download succeeded but no APK file was found under '$ArtifactsDir'."
+        }
+        Write-Host "  Download artifact has no APK. Policy=fallback, switching to local APK."
+    } else {
+        $apkPath = $apkFile.FullName
+    }
 }
-$apkPath = $apkFile.FullName
+if (-not $apkPath) {
+    $localApk = Join-Path $resolvedRepoRoot "app\\build\\outputs\\apk\\debug\\app-debug.apk"
+    if (-not (Test-Path $localApk)) {
+        throw "Fallback APK not found: $localApk"
+    }
+    $apkPath = $localApk
+}
 Write-Host "  APK: $apkPath"
 
 Write-Host "[8/9] Installing APK to connected devices..."
