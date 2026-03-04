@@ -5,7 +5,6 @@ import android.util.Log;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.net.Uri;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioAttributes;
@@ -1015,38 +1014,16 @@ public class CallActivity extends AppCompatActivity {
         logAudioManagerState("hangupRequested_beforeFinish");
         boolean launched = false;
         try {
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://freenote.kr/page_4.php"));
-            intent.setPackage(getPackageName());
-            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+            Intent intent = new Intent(this, MainActivity.class);
+            intent.putExtra("app_url", "https://freenote.kr/page_4.php");
+            intent.putExtra("force_load", true);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             startActivity(intent);
             launched = true;
         } catch (Exception e) {
-            Log.i(TAG, ts() + " returnToInbox deepLinkLaunch failed=" + e.getClass().getSimpleName());
+            Log.i(TAG, ts() + " returnToInbox explicitLaunch failed=" + e.getClass().getSimpleName());
         }
-        if (!launched) {
-            try {
-                Intent intent = new Intent(this, MainActivity.class);
-                intent.putExtra("app_url", "https://freenote.kr/page_4.php");
-                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                startActivity(intent);
-                launched = true;
-            } catch (Exception e) {
-                Log.i(TAG, ts() + " returnToInbox explicitLaunch failed=" + e.getClass().getSimpleName());
-            }
-        }
-        if (!launched) {
-            try {
-                Intent fallback = getPackageManager().getLaunchIntentForPackage(getPackageName());
-                if (fallback != null) {
-                    fallback.putExtra("app_url", "https://freenote.kr/page_4.php");
-                    fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                    startActivity(fallback);
-                    launched = true;
-                }
-            } catch (Exception e) {
-                Log.i(TAG, ts() + " returnToInbox fallbackLaunch failed=" + e.getClass().getSimpleName());
-            }
-        }
+        Log.i(TAG, ts() + " returnToInbox launched=" + launched);
         if (launched) {
             mainHandler.postDelayed(() -> {
                 if (!isFinishing()) finish();

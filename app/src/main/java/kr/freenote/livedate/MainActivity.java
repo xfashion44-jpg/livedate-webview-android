@@ -44,6 +44,7 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity {
     private static final String HOME_URL = "https://freenote.kr/";
     private static final String ONESIGNAL_APP_ID = "bb7af6d9-e8c8-41d4-a25c-c4272f661e7c";
+    private static final String EXTRA_FORCE_LOAD = "force_load";
 
     private WebView webView;
     private SwipeRefreshLayout swipeRefreshLayout;
@@ -220,7 +221,7 @@ public class MainActivity extends AppCompatActivity {
         });
 
         requestRequiredPermissions();
-        webView.loadUrl(resolveLaunchUrl(getIntent()));
+        applyLaunchIntent(getIntent());
 
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
@@ -238,10 +239,18 @@ public class MainActivity extends AppCompatActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        if (webView == null) {
+        applyLaunchIntent(intent);
+    }
+
+    private void applyLaunchIntent(Intent intent) {
+        if (webView == null) return;
+        String targetUrl = resolveLaunchUrl(intent);
+        boolean forceLoad = intent != null && intent.getBooleanExtra(EXTRA_FORCE_LOAD, false);
+        if (forceLoad) {
+            webView.clearHistory();
+            webView.loadUrl(targetUrl);
             return;
         }
-        String targetUrl = resolveLaunchUrl(intent);
         if (!targetUrl.equals(webView.getUrl())) {
             webView.loadUrl(targetUrl);
         }
