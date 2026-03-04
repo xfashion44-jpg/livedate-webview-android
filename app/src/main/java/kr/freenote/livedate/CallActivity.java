@@ -1421,19 +1421,20 @@ public class CallActivity extends AppCompatActivity {
             }
         } catch (Exception ignored) {
         }
-        if (surfaceTextureHelper != null) surfaceTextureHelper.dispose();
-        if (localVideoTrack != null) localVideoTrack.dispose();
-        if (localAudioTrack != null) localAudioTrack.dispose();
-        if (localMediaStream != null) localMediaStream.dispose();
-        if (remoteAudioTrack != null) remoteAudioTrack.dispose();
-        if (videoSource != null) videoSource.dispose();
-        if (audioSource != null) audioSource.dispose();
-        if (peerConnection != null) peerConnection.close();
-        if (peerConnectionFactory != null) peerConnectionFactory.dispose();
-        if (audioDeviceModule != null) audioDeviceModule.release();
-        if (remoteRenderer != null) remoteRenderer.release();
-        if (localRenderer != null) localRenderer.release();
-        if (eglBase != null) eglBase.release();
+        // Dispose stream before individual tracks to avoid double-dispose crash in WebRTC.
+        try { if (localMediaStream != null) localMediaStream.dispose(); } catch (Exception ignored) {}
+        try { if (localVideoTrack != null) localVideoTrack.dispose(); } catch (Exception ignored) {}
+        try { if (localAudioTrack != null) localAudioTrack.dispose(); } catch (Exception ignored) {}
+        try { if (remoteAudioTrack != null) remoteAudioTrack.dispose(); } catch (Exception ignored) {}
+        try { if (surfaceTextureHelper != null) surfaceTextureHelper.dispose(); } catch (Exception ignored) {}
+        try { if (videoSource != null) videoSource.dispose(); } catch (Exception ignored) {}
+        try { if (audioSource != null) audioSource.dispose(); } catch (Exception ignored) {}
+        try { if (peerConnection != null) peerConnection.close(); } catch (Exception ignored) {}
+        try { if (peerConnectionFactory != null) peerConnectionFactory.dispose(); } catch (Exception ignored) {}
+        try { if (audioDeviceModule != null) audioDeviceModule.release(); } catch (Exception ignored) {}
+        try { if (remoteRenderer != null) remoteRenderer.release(); } catch (Exception ignored) {}
+        try { if (localRenderer != null) localRenderer.release(); } catch (Exception ignored) {}
+        try { if (eglBase != null) eglBase.release(); } catch (Exception ignored) {}
         restoreAudioMode();
         logAudioManagerState("hangup_after_restore");
 
