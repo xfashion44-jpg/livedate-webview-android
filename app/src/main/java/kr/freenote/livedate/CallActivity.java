@@ -1013,14 +1013,16 @@ public class CallActivity extends AppCompatActivity {
         finishing = true;
         logAudioManagerState("hangupRequested_beforeFinish");
         try {
-            Intent result = new Intent();
-            result.putExtra("return_url", RETURN_URL_PAGE4);
-            setResult(RESULT_OK, result);
-            Log.i(TAG, ts() + " returnToInbox setResult return_url=" + RETURN_URL_PAGE4);
+            Intent intent = new Intent(this, MainActivity.class);
+            intent.putExtra("app_url", RETURN_URL_PAGE4);
+            intent.putExtra("force_load", true);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            startActivity(intent);
+            Log.i(TAG, ts() + " returnToInbox startMain app_url=" + RETURN_URL_PAGE4 + " taskId=" + getTaskId());
         } catch (Exception e) {
-            Log.i(TAG, ts() + " returnToInbox setResult failed=" + e.getClass().getSimpleName());
+            Log.i(TAG, ts() + " returnToInbox startMain failed=" + e.getClass().getSimpleName());
         }
-        Log.i(TAG, ts() + " returnToInbox finishWithResult=true");
+        Log.i(TAG, ts() + " returnToInbox finishAfterMain=true");
         if (!isFinishing()) finish();
     }
 
