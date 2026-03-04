@@ -47,6 +47,30 @@ function Invoke-GhJson([string[]]$GhArgs) {
     }
 }
 
+function Get-RunArtifacts([string]$RepoName, [string]$RunId) {
+    try {
+        $view = Invoke-GhJson @(
+            "run", "view", "$RunId",
+            "--repo", $RepoName,
+            "--json", "artifacts"
+        )
+        if ($view -and $view.artifacts) {
+            return @($view.artifacts)
+        }
+    } catch {
+    }
+
+    $api = Invoke-GhJson @(
+        "api",
+        "-H", "Accept: application/vnd.github+json",
+        "/repos/$RepoName/actions/runs/$RunId/artifacts?per_page=100"
+    )
+    if ($api -and $api.artifacts) {
+        return @($api.artifacts)
+    }
+    return @()
+}
+
 Write-Host "[1/9] Checking required tools..."
 Require-Cmd "git"
 Require-Cmd "adb"
@@ -131,15 +155,7 @@ foreach ($r in $candidateRuns) {
     $runId = $r.databaseId
     if (-not $runId) { continue }
     Write-Host "  Trying RUN_ID: $runId"
-    $runView = Invoke-GhJson @(
-        "run", "view", "$runId",
-        "--repo", $Repo,
-        "--json", "artifacts"
-    )
-    $artifacts = @()
-    if ($runView -and $runView.artifacts) {
-        $artifacts = @($runView.artifacts)
-    }
+    $artifacts = @(Get-RunArtifacts -RepoName $Repo -RunId $runId)
     if ($artifacts.Count -eq 0) {
         Write-Host "  Download FAIL (no artifacts in run)"
         continue
