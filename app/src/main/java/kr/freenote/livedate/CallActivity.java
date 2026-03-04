@@ -1017,7 +1017,7 @@ public class CallActivity extends AppCompatActivity {
             Intent intent = new Intent(this, MainActivity.class);
             intent.putExtra("app_url", "https://freenote.kr/page_4.php");
             intent.putExtra("force_load", true);
-            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
             startActivity(intent);
             launched = true;
         } catch (Exception e) {
@@ -1025,9 +1025,7 @@ public class CallActivity extends AppCompatActivity {
         }
         Log.i(TAG, ts() + " returnToInbox launched=" + launched);
         if (launched) {
-            mainHandler.postDelayed(() -> {
-                if (!isFinishing()) finish();
-            }, MAIN_RETURN_FINISH_DELAY_MS);
+            if (!isFinishing()) finish();
         } else {
             finish();
         }

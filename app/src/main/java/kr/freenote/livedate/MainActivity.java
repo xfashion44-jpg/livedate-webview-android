@@ -13,6 +13,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.provider.Settings;
+import android.util.Log;
 import android.webkit.CookieManager;
 import android.webkit.GeolocationPermissions;
 import android.webkit.JavascriptInterface;
@@ -42,6 +43,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
+    private static final String TAG = "LiveDateCall";
     private static final String HOME_URL = "https://freenote.kr/";
     private static final String ONESIGNAL_APP_ID = "bb7af6d9-e8c8-41d4-a25c-c4272f661e7c";
     private static final String EXTRA_FORCE_LOAD = "force_load";
@@ -246,6 +248,7 @@ public class MainActivity extends AppCompatActivity {
         if (webView == null) return;
         String targetUrl = resolveLaunchUrl(intent);
         boolean forceLoad = intent != null && intent.getBooleanExtra(EXTRA_FORCE_LOAD, false);
+        Log.i(TAG, "MAIN applyLaunchIntent forceLoad=" + forceLoad + " target=" + targetUrl);
         if (forceLoad) {
             webView.clearHistory();
             webView.loadUrl(targetUrl);
@@ -624,11 +627,13 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        Log.i(TAG, "MAIN onResume url=" + (webView == null ? "null" : webView.getUrl()));
         nativeCallLaunching = false;
     }
 
     @Override
     protected void onDestroy() {
+        Log.i(TAG, "MAIN onDestroy");
         restoreAudioMode();
         nativeCallLaunching = false;
         if (filePathCallback != null) {
