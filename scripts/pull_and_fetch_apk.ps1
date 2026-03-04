@@ -6,7 +6,7 @@ param(
     [string]$ArtifactsDir = ".\\artifacts",
     [switch]$SkipGitPull,
     [ValidateSet("throw", "fallback")]
-    [string]$DownloadFailurePolicy = "throw"
+    [string]$DownloadFailurePolicy = "fallback"
 )
 
 $ErrorActionPreference = "Stop"
@@ -131,14 +131,40 @@ foreach ($r in $candidateRuns) {
     $runId = $r.databaseId
     if (-not $runId) { continue }
     Write-Host "  Trying RUN_ID: $runId"
+    $runView = Invoke-GhJson @(
+        "run", "view", "$runId",
+        "--repo", $Repo,
+        "--json", "artifacts"
+    )
+    $artifacts = @()
+    if ($runView -and $runView.artifacts) {
+        $artifacts = @($runView.artifacts)
+    }
+    if ($artifacts.Count -eq 0) {
+        Write-Host "  Download FAIL (no artifacts in run)"
+        continue
+    }
+    $selectedArtifact = $artifacts | Where-Object { $_.name -eq $ArtifactName } | Select-Object -First 1
+    if (-not $selectedArtifact) {
+        $selectedArtifact = $artifacts |
+            Where-Object { $_.name -match "apk" -or $_.name -match "debug" } |
+            Select-Object -First 1
+    }
+    if (-not $selectedArtifact) {
+        Write-Host "  Download FAIL (no matching artifact name)"
+        continue
+    }
+    $selectedArtifactName = $selectedArtifact.name
+    Write-Host "    Artifact: $selectedArtifactName"
     & $script:GhExe run download "$runId" `
         --repo $Repo `
-        --name $ArtifactName `
+        --name $selectedArtifactName `
         --dir $ArtifactsDir
     if ($LASTEXITCODE -eq 0) {
         Write-Host "  Download OK"
         $downloadOk = $true
         $finalRunId = $runId
+        $ArtifactName = $selectedArtifactName
         break
     }
     Write-Host "  Download FAIL"
@@ -205,5 +231,6 @@ Write-Host "[9/9] Done"
 Write-Host "  RepoRoot    : $resolvedRepoRoot"
 Write-Host "  Run ID      : $finalRunId"
 Write-Host "  Artifact    : $ArtifactName"
+Write-Host "  Download OK : $downloadOk"
 Write-Host "  Output Dir  : $ArtifactsDir"
 Write-Host "  APK Path    : $apkPath"
