@@ -48,6 +48,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String ONESIGNAL_APP_ID = "bb7af6d9-e8c8-41d4-a25c-c4272f661e7c";
     private static final String EXTRA_FORCE_LOAD = "force_load";
     private static final String EXTRA_CALL_RETURN_URL = "return_url";
+    private static final String PAGE_2_PATH = "/page_2.php";
 
     private WebView webView;
     private SwipeRefreshLayout swipeRefreshLayout;
@@ -127,7 +128,13 @@ public class MainActivity extends AppCompatActivity {
         swipeRefreshLayout = findViewById(R.id.swipe_refresh);
         webView = findViewById(R.id.web_view);
 
-        swipeRefreshLayout.setOnRefreshListener(webView::reload);
+        swipeRefreshLayout.setOnRefreshListener(() -> {
+            if (isPage2Url(webView == null ? null : webView.getUrl())) {
+                swipeRefreshLayout.setRefreshing(false);
+                return;
+            }
+            webView.reload();
+        });
         swipeRefreshLayout.setOnChildScrollUpCallback((parent, child) -> webView.getScrollY() > 0);
 
         WebSettings webSettings = webView.getSettings();
@@ -162,6 +169,13 @@ public class MainActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 swipeRefreshLayout.setRefreshing(false);
+                updateSwipeRefreshForUrl(url);
+            }
+
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                updateSwipeRefreshForUrl(url);
             }
         });
 
@@ -276,6 +290,27 @@ public class MainActivity extends AppCompatActivity {
         }
         if (!targetUrl.equals(webView.getUrl())) {
             webView.loadUrl(targetUrl);
+        }
+        updateSwipeRefreshForUrl(targetUrl);
+    }
+
+    private void updateSwipeRefreshForUrl(String url) {
+        if (swipeRefreshLayout == null) return;
+        boolean blockSwipe = isPage2Url(url);
+        swipeRefreshLayout.setEnabled(!blockSwipe);
+        if (blockSwipe && swipeRefreshLayout.isRefreshing()) {
+            swipeRefreshLayout.setRefreshing(false);
+        }
+    }
+
+    private boolean isPage2Url(String url) {
+        if (url == null || url.trim().isEmpty()) return false;
+        try {
+            Uri uri = Uri.parse(url.trim());
+            String path = uri.getPath();
+            return PAGE_2_PATH.equalsIgnoreCase(path);
+        } catch (Exception ignored) {
+            return false;
         }
     }
 
