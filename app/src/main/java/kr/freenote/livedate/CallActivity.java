@@ -66,6 +66,7 @@ import java.util.concurrent.ScheduledExecutorService;
 
 public class CallActivity extends AppCompatActivity {
     private static final String TAG = "LiveDateCall";
+    private static final double REMOTE_AUDIO_TRACK_VOLUME = 8.0;
     private static final String BASE_URL = "https://freenote.kr";
     private static final String PUSH_ENDPOINT = BASE_URL + "/toast/call_signal_push.php";
     private static final String PULL_ENDPOINT = BASE_URL + "/toast/call_signal_pull.php";
@@ -150,8 +151,9 @@ public class CallActivity extends AppCompatActivity {
         if (track == null) return;
         remoteAudioTrack = track;
         remoteAudioTrack.setEnabled(true);
-        remoteAudioTrack.setVolume(4.0);
+        remoteAudioTrack.setVolume(REMOTE_AUDIO_TRACK_VOLUME);
         logRemoteAudioState("attachRemoteAudioTrack");
+        logAudioManagerState("attachRemoteAudioTrack");
         setStatus("상대 오디오 수신 중...");
     }
 
@@ -449,8 +451,8 @@ public class CallActivity extends AppCompatActivity {
             try {
                 int maxVoice = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
                 int maxMusic = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-                int targetVoice = Math.max(1, (int) Math.ceil(maxVoice * 0.9));
-                int targetMusic = Math.max(1, (int) Math.ceil(maxMusic * 0.85));
+                int targetVoice = maxVoice;
+                int targetMusic = maxMusic;
                 audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, targetVoice, 0);
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetMusic, 0);
             } catch (Exception ignored) {
@@ -916,7 +918,8 @@ public class CallActivity extends AppCompatActivity {
             Log.i(TAG, ts() + " REMOTE_AUDIO reason=" + reason
                     + " track=true id=" + remoteAudioTrack.id()
                     + " enabled=" + remoteAudioTrack.enabled()
-                    + " state=" + remoteAudioTrack.state());
+                    + " state=" + remoteAudioTrack.state()
+                    + " appliedVolume=" + REMOTE_AUDIO_TRACK_VOLUME);
         } catch (Exception e) {
             Log.i(TAG, ts() + " REMOTE_AUDIO reason=" + reason + " logError=" + e.getMessage());
         }
@@ -934,6 +937,15 @@ public class CallActivity extends AppCompatActivity {
                     .append(" mode=").append(am.getMode())
                     .append(" speaker=").append(am.isSpeakerphoneOn())
                     .append(" micMute=").append(am.isMicrophoneMute());
+            try {
+                int voice = am.getStreamVolume(AudioManager.STREAM_VOICE_CALL);
+                int voiceMax = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
+                int music = am.getStreamVolume(AudioManager.STREAM_MUSIC);
+                int musicMax = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+                sb.append(" voice=").append(voice).append("/").append(voiceMax)
+                        .append(" music=").append(music).append("/").append(musicMax);
+            } catch (Exception ignored) {
+            }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                 try {
                     android.media.AudioDeviceInfo d = am.getCommunicationDevice();

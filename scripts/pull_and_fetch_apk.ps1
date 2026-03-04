@@ -1,6 +1,6 @@
 param(
     [string]$RepoRoot = ".",
-    [string]$Repo = "xfashion44-jpg/livedate-android",
+    [string]$Repo = "xfashion44-jpg/livedate-webview-android",
     [string]$Workflow = "Android Debug APK",
     [string]$ArtifactName = "app-debug-apk",
     [string]$ArtifactsDir = ".\\artifacts"
