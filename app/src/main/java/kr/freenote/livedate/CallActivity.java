@@ -5,6 +5,7 @@ import android.util.Log;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.net.Uri;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioAttributes;
@@ -75,7 +76,7 @@ public class CallActivity extends AppCompatActivity {
     private static final int POLL_CONNECT_TIMEOUT_MS = 5000;
     private static final int POLL_READ_TIMEOUT_MS = 30000;
     private static final long OFFER_START_DELAY_MS = 50L;
-    private static final long MAIN_RETURN_FINISH_DELAY_MS = 450L;
+    private static final long MAIN_RETURN_FINISH_DELAY_MS = 700L;
     private static final String BASE_URL = "https://freenote.kr";
     private static final String PUSH_ENDPOINT = BASE_URL + "/toast/call_signal_push.php";
     private static final String PULL_ENDPOINT = BASE_URL + "/toast/call_signal_pull.php";
@@ -1014,13 +1015,24 @@ public class CallActivity extends AppCompatActivity {
         logAudioManagerState("hangupRequested_beforeFinish");
         boolean launched = false;
         try {
-            Intent intent = new Intent(this, MainActivity.class);
-            intent.putExtra("app_url", "https://freenote.kr/page_4.php");
-            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://freenote.kr/page_4.php"));
+            intent.setPackage(getPackageName());
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(intent);
             launched = true;
         } catch (Exception e) {
-            Log.i(TAG, ts() + " returnToInbox primaryLaunch failed=" + e.getClass().getSimpleName());
+            Log.i(TAG, ts() + " returnToInbox deepLinkLaunch failed=" + e.getClass().getSimpleName());
+        }
+        if (!launched) {
+            try {
+                Intent intent = new Intent(this, MainActivity.class);
+                intent.putExtra("app_url", "https://freenote.kr/page_4.php");
+                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                startActivity(intent);
+                launched = true;
+            } catch (Exception e) {
+                Log.i(TAG, ts() + " returnToInbox explicitLaunch failed=" + e.getClass().getSimpleName());
+            }
         }
         if (!launched) {
             try {
@@ -1036,7 +1048,9 @@ public class CallActivity extends AppCompatActivity {
             }
         }
         if (launched) {
-            mainHandler.postDelayed(this::finish, MAIN_RETURN_FINISH_DELAY_MS);
+            mainHandler.postDelayed(() -> {
+                if (!isFinishing()) finish();
+            }, MAIN_RETURN_FINISH_DELAY_MS);
         } else {
             finish();
         }
