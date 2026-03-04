@@ -103,7 +103,24 @@ public class CallActivity extends AppCompatActivity {
     private int previousMusicVolume = -1;
     private boolean audioStateCaptured = false;
     private boolean audioFocusGranted = false;
+    private boolean audioFocusLost = false;
     private boolean audioDeviceCallbackRegistered = false;
+    private volatile PeerConnection.IceConnectionState currentIceState = PeerConnection.IceConnectionState.NEW;
+    private volatile int lastAudioFocusChange = Integer.MIN_VALUE;
+    private final AudioManager.OnAudioFocusChangeListener callAudioFocusChangeListener = focusChange -> {
+        lastAudioFocusChange = focusChange;
+        Log.i(TAG, ts() + " AUDIO_FOCUS_CHANGE=" + focusChange);
+        if (focusChange == AudioManager.AUDIOFOCUS_LOSS || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+            audioFocusLost = true;
+            logAudioManagerState("focusLoss");
+            return;
+        }
+        if (focusChange == AudioManager.AUDIOFOCUS_GAIN && audioFocusLost) {
+            audioFocusLost = false;
+            enforceCallAudioRoute("focusRegained");
+            logAudioManagerState("focusRegained");
+        }
+    };
     private final AudioDeviceCallback callAudioDeviceCallback = new AudioDeviceCallback() {
         @Override
         public void onAudioDevicesAdded(AudioDeviceInfo[] addedDevices) {
@@ -169,6 +186,7 @@ public class CallActivity extends AppCompatActivity {
         remoteAudioTrack.setEnabled(true);
         remoteAudioTrack.setVolume(REMOTE_AUDIO_TRACK_VOLUME);
         enforceCallAudioRoute("remoteAudioAttach");
+        scheduleDelayedSpeakerReapply("remoteAudioAttach", 300L);
         logRemoteAudioState("attachRemoteAudioTrack");
         logAudioManagerState("attachRemoteAudioTrack");
         setStatus("상대 오디오 수신 중...");
@@ -205,6 +223,7 @@ public class CallActivity extends AppCompatActivity {
 
         cookieHeader = CookieManager.getInstance().getCookie(BASE_URL);
         initCallAudioRouting();
+        enforceCallAudioRoute("onCreate");
         logAudioManagerState("onCreate");
         setStatus("통화 초기화 중...");
         networkExecutor.execute(() -> {
@@ -232,6 +251,13 @@ public class CallActivity extends AppCompatActivity {
                 }
             });
         });
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        enforceCallAudioRoute("onStart");
+        logAudioManagerState("onStart");
     }
 
     private void setupButtons() {
@@ -321,11 +347,13 @@ public class CallActivity extends AppCompatActivity {
 
             @Override
             public void onIceConnectionChange(PeerConnection.IceConnectionState iceConnectionState) {
+                currentIceState = iceConnectionState;
                 setStatus("ICE: " + iceConnectionState.name());
                 Log.i(TAG, ts() + " iceConnectionState=" + iceConnectionState + " localAudioTracks=" + localAudioTrackCount() + " remoteAudioTracks=" + remoteAudioTrackCount());
                 if (iceConnectionState == PeerConnection.IceConnectionState.CONNECTED
                         || iceConnectionState == PeerConnection.IceConnectionState.COMPLETED) {
                     enforceCallAudioRoute("iceConnected");
+                    scheduleDelayedSpeakerReapply("iceConnected", 300L);
                 }
                 logAudioManagerState("onIceConnectionChange");
                 logLocalAudioState("onIceConnectionChange");
@@ -358,6 +386,10 @@ public class CallActivity extends AppCompatActivity {
             public void onConnectionChange(PeerConnection.PeerConnectionState newState) {
                 setStatus("연결: " + newState.name());
                 Log.i(TAG, ts() + " connectionState=" + newState + " localAudioTracks=" + localAudioTrackCount() + " remoteAudioTracks=" + remoteAudioTrackCount());
+                if (newState == PeerConnection.PeerConnectionState.CONNECTED) {
+                    enforceCallAudioRoute("peerConnected");
+                    scheduleDelayedSpeakerReapply("peerConnectedUi", 300L);
+                }
             }
 
             @Override
@@ -476,12 +508,12 @@ public class CallActivity extends AppCompatActivity {
                     audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
                             .setAudioAttributes(attrs)
                             .setAcceptsDelayedFocusGain(false)
-                            .setOnAudioFocusChangeListener(focusChange -> {})
+                            .setOnAudioFocusChangeListener(callAudioFocusChangeListener)
                             .build();
                     focusResult = audioManager.requestAudioFocus(audioFocusRequest);
                 } else {
                     focusResult = audioManager.requestAudioFocus(
-                            null,
+                            callAudioFocusChangeListener,
                             AudioManager.STREAM_VOICE_CALL,
                             AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
                     );
@@ -517,6 +549,14 @@ public class CallActivity extends AppCompatActivity {
         enforceCallAudioRoute(reason);
     }
 
+    private void scheduleDelayedSpeakerReapply(String reason, long delayMs) {
+        mainHandler.postDelayed(() -> {
+            if (finishing) return;
+            enforceCallAudioRoute(reason + "_delay");
+            logAudioManagerState(reason + "_delayApplied");
+        }, delayMs);
+    }
+
     private boolean hasWiredOrBluetoothOutput() {
         if (audioManager == null) return false;
         try {
@@ -527,10 +567,8 @@ public class CallActivity extends AppCompatActivity {
                 int type = dev.getType();
                 if (type == AudioDeviceInfo.TYPE_WIRED_HEADSET
                         || type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
-                        || type == AudioDeviceInfo.TYPE_USB_HEADSET
                         || type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
-                        || type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
-                        || type == AudioDeviceInfo.TYPE_BLE_HEADSET) {
+                        || type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
                     return true;
                 }
             }
@@ -554,10 +592,8 @@ public class CallActivity extends AppCompatActivity {
                     }
                 } else {
                     if (type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
-                            || type == AudioDeviceInfo.TYPE_BLE_HEADSET
                             || type == AudioDeviceInfo.TYPE_WIRED_HEADSET
-                            || type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
-                            || type == AudioDeviceInfo.TYPE_USB_HEADSET) {
+                            || type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES) {
                         target = dev;
                         break;
                     }
@@ -1046,7 +1082,10 @@ public class CallActivity extends AppCompatActivity {
             sb.append(ts()).append(" AUDIO reason=").append(reason)
                     .append(" mode=").append(am.getMode())
                     .append(" speaker=").append(am.isSpeakerphoneOn())
-                    .append(" micMute=").append(am.isMicrophoneMute());
+                    .append(" micMute=").append(am.isMicrophoneMute())
+                    .append(" focusGranted=").append(audioFocusGranted)
+                    .append(" focusLast=").append(audioFocusChangeName(lastAudioFocusChange))
+                    .append(" ice=").append(currentIceState);
             try {
                 int voice = am.getStreamVolume(AudioManager.STREAM_VOICE_CALL);
                 int voiceMax = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
@@ -1063,9 +1102,37 @@ public class CallActivity extends AppCompatActivity {
                 } catch (Exception ignored) {
                 }
             }
+            sb.append(" outputs=").append(describeOutputDevices(am));
             Log.i(TAG, sb.toString());
         } catch (Exception e) {
             Log.i(TAG, ts() + " AUDIO reason=" + reason + " logError=" + e.getMessage());
+        }
+    }
+
+    private String audioFocusChangeName(int focusChange) {
+        if (focusChange == AudioManager.AUDIOFOCUS_GAIN) return "GAIN";
+        if (focusChange == AudioManager.AUDIOFOCUS_LOSS) return "LOSS";
+        if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) return "LOSS_TRANSIENT";
+        if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) return "LOSS_CAN_DUCK";
+        if (focusChange == Integer.MIN_VALUE) return "NONE";
+        return String.valueOf(focusChange);
+    }
+
+    private String describeOutputDevices(AudioManager am) {
+        try {
+            AudioDeviceInfo[] outputs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+            if (outputs == null || outputs.length == 0) return "[]";
+            StringBuilder sb = new StringBuilder("[");
+            for (int i = 0; i < outputs.length; i++) {
+                AudioDeviceInfo d = outputs[i];
+                if (d == null) continue;
+                if (sb.length() > 1) sb.append(",");
+                sb.append(d.getType());
+            }
+            sb.append("]");
+            return sb.toString();
+        } catch (Exception ignored) {
+            return "[]";
         }
     }
 
