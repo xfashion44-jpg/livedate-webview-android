@@ -48,6 +48,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String HOME_URL = "https://freenote.kr/";
     private static final String ONESIGNAL_APP_ID = "bb7af6d9-e8c8-41d4-a25c-c4272f661e7c";
     private static final String EXTRA_FORCE_LOAD = "force_load";
+    private static final String EXTRA_CALL_RETURN_URL = "return_url";
     private static final String CALL_RETURN_PREFS = "livedate_call_return";
     private static final String KEY_FORCE_RETURN_URL = "force_return_url";
 
@@ -60,6 +61,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean previousSpeakerphoneOn = false;
 
     private ActivityResultLauncher<Intent> fileChooserLauncher;
+    private ActivityResultLauncher<Intent> nativeCallLauncher;
     private ActivityResultLauncher<String[]> permissionLauncher;
     private PermissionRequest pendingWebPermissionRequest;
     private String pendingNativeCallRoom = "";
@@ -93,6 +95,22 @@ public class MainActivity extends AppCompatActivity {
                     }
                     filePathCallback.onReceiveValue(results);
                     filePathCallback = null;
+                }
+        );
+
+        nativeCallLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                result -> {
+                    nativeCallLaunching = false;
+                    Intent data = result.getData();
+                    String returnUrl = data == null ? "" : data.getStringExtra(EXTRA_CALL_RETURN_URL);
+                    if (returnUrl == null || returnUrl.trim().isEmpty()) {
+                        returnUrl = "https://freenote.kr/page_4.php";
+                    }
+                    if (webView != null) {
+                        webView.clearHistory();
+                        webView.loadUrl(returnUrl);
+                    }
                 }
         );
 
@@ -398,7 +416,7 @@ public class MainActivity extends AppCompatActivity {
                 Intent intent = new Intent(MainActivity.this, CallActivity.class);
                 intent.putExtra("room", safeRoom);
                 intent.putExtra("role", safeRole);
-                startActivity(intent);
+                nativeCallLauncher.launch(intent);
             });
         }
     }
@@ -419,7 +437,7 @@ public class MainActivity extends AppCompatActivity {
         intent.putExtra("role", pendingNativeCallRole == null ? "" : pendingNativeCallRole);
         pendingNativeCallRoom = "";
         pendingNativeCallRole = "";
-        startActivity(intent);
+        nativeCallLauncher.launch(intent);
     }
 
     private void requestRequiredPermissions() {

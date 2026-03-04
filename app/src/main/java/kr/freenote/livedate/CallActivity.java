@@ -1,7 +1,6 @@
 package kr.freenote.livedate;
 
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.util.Log;
 import android.os.Bundle;
 import android.os.Handler;
@@ -76,14 +75,11 @@ public class CallActivity extends AppCompatActivity {
     private static final int POLL_CONNECT_TIMEOUT_MS = 5000;
     private static final int POLL_READ_TIMEOUT_MS = 30000;
     private static final long OFFER_START_DELAY_MS = 50L;
-    private static final long MAIN_RETURN_FINISH_DELAY_MS = 700L;
     private static final String BASE_URL = "https://freenote.kr";
     private static final String PUSH_ENDPOINT = BASE_URL + "/toast/call_signal_push.php";
     private static final String PULL_ENDPOINT = BASE_URL + "/toast/call_signal_pull.php";
     private static final String RESET_ENDPOINT = BASE_URL + "/toast/call_signal_reset.php";
     private static final String ICE_SERVERS_ENDPOINT = BASE_URL + "/toast/ice_servers.php";
-    private static final String CALL_RETURN_PREFS = "livedate_call_return";
-    private static final String KEY_FORCE_RETURN_URL = "force_return_url";
     private static final String RETURN_URL_PAGE4 = "https://freenote.kr/page_4.php";
 
     private SurfaceViewRenderer remoteRenderer;
@@ -1017,22 +1013,14 @@ public class CallActivity extends AppCompatActivity {
         finishing = true;
         logAudioManagerState("hangupRequested_beforeFinish");
         try {
-            SharedPreferences prefs = getSharedPreferences(CALL_RETURN_PREFS, MODE_PRIVATE);
-            prefs.edit().putString(KEY_FORCE_RETURN_URL, RETURN_URL_PAGE4).apply();
+            Intent result = new Intent();
+            result.putExtra("return_url", RETURN_URL_PAGE4);
+            setResult(RESULT_OK, result);
+            Log.i(TAG, ts() + " returnToInbox setResult return_url=" + RETURN_URL_PAGE4);
         } catch (Exception e) {
-            Log.i(TAG, ts() + " returnToInbox markPending failed=" + e.getClass().getSimpleName());
+            Log.i(TAG, ts() + " returnToInbox setResult failed=" + e.getClass().getSimpleName());
         }
-        try {
-            Intent intent = new Intent(this, MainActivity.class);
-            intent.putExtra("app_url", RETURN_URL_PAGE4);
-            intent.putExtra("force_load", true);
-            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-            startActivity(intent);
-            Log.i(TAG, ts() + " returnToInbox relaunchMain ok taskId=" + getTaskId());
-        } catch (Exception e) {
-            Log.i(TAG, ts() + " returnToInbox relaunchMain failed=" + e.getClass().getSimpleName());
-        }
-        Log.i(TAG, ts() + " returnToInbox finishOnly=false");
+        Log.i(TAG, ts() + " returnToInbox finishWithResult=true");
         if (!isFinishing()) finish();
     }
 
