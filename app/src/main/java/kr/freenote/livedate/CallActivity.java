@@ -5,6 +5,8 @@ import android.util.Log;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.media.AudioDeviceCallback;
+import android.media.AudioDeviceInfo;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
@@ -99,6 +101,20 @@ public class CallActivity extends AppCompatActivity {
     private boolean previousSpeakerphoneOn = false;
     private int previousVoiceCallVolume = -1;
     private int previousMusicVolume = -1;
+    private boolean audioStateCaptured = false;
+    private boolean audioFocusGranted = false;
+    private boolean audioDeviceCallbackRegistered = false;
+    private final AudioDeviceCallback callAudioDeviceCallback = new AudioDeviceCallback() {
+        @Override
+        public void onAudioDevicesAdded(AudioDeviceInfo[] addedDevices) {
+            handleAudioDeviceChange("audioDeviceAdded");
+        }
+
+        @Override
+        public void onAudioDevicesRemoved(AudioDeviceInfo[] removedDevices) {
+            handleAudioDeviceChange("audioDeviceRemoved");
+        }
+    };
 
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
     private final ScheduledExecutorService pollExecutor = Executors.newSingleThreadScheduledExecutor();
@@ -152,6 +168,7 @@ public class CallActivity extends AppCompatActivity {
         remoteAudioTrack = track;
         remoteAudioTrack.setEnabled(true);
         remoteAudioTrack.setVolume(REMOTE_AUDIO_TRACK_VOLUME);
+        enforceCallAudioRoute("remoteAudioAttach");
         logRemoteAudioState("attachRemoteAudioTrack");
         logAudioManagerState("attachRemoteAudioTrack");
         setStatus("상대 오디오 수신 중...");
@@ -187,7 +204,8 @@ public class CallActivity extends AppCompatActivity {
         }
 
         cookieHeader = CookieManager.getInstance().getCookie(BASE_URL);
-        configureAudioForCall();
+        initCallAudioRouting();
+        logAudioManagerState("onCreate");
         setStatus("통화 초기화 중...");
         networkExecutor.execute(() -> {
             List<PeerConnection.IceServer> iceServers = fetchIceServersFromServer();
@@ -305,7 +323,10 @@ public class CallActivity extends AppCompatActivity {
             public void onIceConnectionChange(PeerConnection.IceConnectionState iceConnectionState) {
                 setStatus("ICE: " + iceConnectionState.name());
                 Log.i(TAG, ts() + " iceConnectionState=" + iceConnectionState + " localAudioTracks=" + localAudioTrackCount() + " remoteAudioTracks=" + remoteAudioTrackCount());
-                configureAudioForCall();
+                if (iceConnectionState == PeerConnection.IceConnectionState.CONNECTED
+                        || iceConnectionState == PeerConnection.IceConnectionState.COMPLETED) {
+                    enforceCallAudioRoute("iceConnected");
+                }
                 logAudioManagerState("onIceConnectionChange");
                 logLocalAudioState("onIceConnectionChange");
                 logRemoteAudioState("onIceConnectionChange");
@@ -419,63 +440,148 @@ public class CallActivity extends AppCompatActivity {
         }
     }
 
-    private void configureAudioForCall() {
+    private void initCallAudioRouting() {
         audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
         if (audioManager == null) return;
-        previousAudioMode = audioManager.getMode();
-        previousSpeakerphoneOn = audioManager.isSpeakerphoneOn();
-        try {
-            previousVoiceCallVolume = audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL);
-            previousMusicVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
-        } catch (Exception ignored) {
-        }
-        try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                AudioAttributes attrs = new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build();
-                audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                        .setAudioAttributes(attrs)
-                        .setAcceptsDelayedFocusGain(false)
-                        .setOnAudioFocusChangeListener(focusChange -> {})
-                        .build();
-                int focusResult = audioManager.requestAudioFocus(audioFocusRequest);
-                Log.i(TAG, ts() + " audioFocusResult=" + focusResult + " (O+)");
-            } else {
-                int focusResult = audioManager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
-                Log.i(TAG, ts() + " audioFocusResult=" + focusResult + " (legacy)");
+        if (!audioStateCaptured) {
+            previousAudioMode = audioManager.getMode();
+            previousSpeakerphoneOn = audioManager.isSpeakerphoneOn();
+            try {
+                previousVoiceCallVolume = audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL);
+                previousMusicVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+            } catch (Exception ignored) {
             }
+            audioStateCaptured = true;
+        }
+        if (!audioDeviceCallbackRegistered) {
+            try {
+                audioManager.registerAudioDeviceCallback(callAudioDeviceCallback, mainHandler);
+                audioDeviceCallbackRegistered = true;
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private void enforceCallAudioRoute(String reason) {
+        initCallAudioRouting();
+        if (audioManager == null) return;
+        try {
+            if (!audioFocusGranted) {
+                int focusResult;
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    AudioAttributes attrs = new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build();
+                    audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                            .setAudioAttributes(attrs)
+                            .setAcceptsDelayedFocusGain(false)
+                            .setOnAudioFocusChangeListener(focusChange -> {})
+                            .build();
+                    focusResult = audioManager.requestAudioFocus(audioFocusRequest);
+                } else {
+                    focusResult = audioManager.requestAudioFocus(
+                            null,
+                            AudioManager.STREAM_VOICE_CALL,
+                            AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+                    );
+                }
+                audioFocusGranted = (focusResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED);
+                Log.i(TAG, ts() + " AUDIO_FOCUS reason=" + reason + " result=" + focusResult);
+            }
+
             audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-            audioManager.setSpeakerphoneOn(true);
+            boolean externalConnected = hasWiredOrBluetoothOutput();
+            if (externalConnected) {
+                audioManager.setSpeakerphoneOn(false);
+                selectPreferredCommunicationDevice(false);
+            } else {
+                audioManager.setSpeakerphoneOn(true);
+                selectPreferredCommunicationDevice(true);
+            }
+
             try {
                 int maxVoice = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
                 int maxMusic = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-                int targetVoice = maxVoice;
-                int targetMusic = maxMusic;
-                audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, targetVoice, 0);
-                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetMusic, 0);
+                audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, maxVoice, 0);
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxMusic, 0);
             } catch (Exception ignored) {
             }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                try {
-                    for (android.media.AudioDeviceInfo dev : audioManager.getAvailableCommunicationDevices()) {
-                        if (dev.getType() == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
-                            audioManager.setCommunicationDevice(dev);
-                            break;
-                        }
-                    }
-                } catch (Exception ignored) {
+        } catch (Exception ignored) {
+        }
+        logAudioManagerState("enforceCallAudioRoute_" + reason);
+    }
+
+    private void handleAudioDeviceChange(String reason) {
+        if (finishing) return;
+        enforceCallAudioRoute(reason);
+    }
+
+    private boolean hasWiredOrBluetoothOutput() {
+        if (audioManager == null) return false;
+        try {
+            AudioDeviceInfo[] outputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+            if (outputs == null) return false;
+            for (AudioDeviceInfo dev : outputs) {
+                if (dev == null) continue;
+                int type = dev.getType();
+                if (type == AudioDeviceInfo.TYPE_WIRED_HEADSET
+                        || type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                        || type == AudioDeviceInfo.TYPE_USB_HEADSET
+                        || type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                        || type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                        || type == AudioDeviceInfo.TYPE_BLE_HEADSET) {
+                    return true;
                 }
             }
         } catch (Exception ignored) {
         }
-        logAudioManagerState("configureAudioForCall");
+        return false;
+    }
+
+    private void selectPreferredCommunicationDevice(boolean preferSpeaker) {
+        if (audioManager == null) return;
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) return;
+        try {
+            AudioDeviceInfo target = null;
+            for (AudioDeviceInfo dev : audioManager.getAvailableCommunicationDevices()) {
+                if (dev == null) continue;
+                int type = dev.getType();
+                if (preferSpeaker) {
+                    if (type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                        target = dev;
+                        break;
+                    }
+                } else {
+                    if (type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                            || type == AudioDeviceInfo.TYPE_BLE_HEADSET
+                            || type == AudioDeviceInfo.TYPE_WIRED_HEADSET
+                            || type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                            || type == AudioDeviceInfo.TYPE_USB_HEADSET) {
+                        target = dev;
+                        break;
+                    }
+                }
+            }
+            if (target != null) {
+                audioManager.setCommunicationDevice(target);
+            } else if (preferSpeaker) {
+                audioManager.clearCommunicationDevice();
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private void restoreAudioMode() {
         if (audioManager == null) return;
         try {
+            if (audioDeviceCallbackRegistered) {
+                try {
+                    audioManager.unregisterAudioDeviceCallback(callAudioDeviceCallback);
+                } catch (Exception ignored) {
+                }
+                audioDeviceCallbackRegistered = false;
+            }
             audioManager.setSpeakerphoneOn(previousSpeakerphoneOn);
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                 try { audioManager.clearCommunicationDevice(); } catch (Exception ignored) {}
@@ -487,12 +593,15 @@ public class CallActivity extends AppCompatActivity {
                 try { audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, previousMusicVolume, 0); } catch (Exception ignored) {}
             }
             audioManager.setMode(previousAudioMode);
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                if (audioFocusRequest != null) {
-                    audioManager.abandonAudioFocusRequest(audioFocusRequest);
+            if (audioFocusGranted) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    if (audioFocusRequest != null) {
+                        audioManager.abandonAudioFocusRequest(audioFocusRequest);
+                    }
+                } else {
+                    audioManager.abandonAudioFocus(null);
                 }
-            } else {
-                audioManager.abandonAudioFocus(null);
+                audioFocusGranted = false;
             }
         } catch (Exception ignored) {
         }
@@ -839,6 +948,7 @@ public class CallActivity extends AppCompatActivity {
             finish();
             return;
         }
+        logAudioManagerState("hangupRequested_beforeFinish");
         try {
             Intent intent = new Intent(this, MainActivity.class);
             intent.putExtra("app_url", "https://freenote.kr/page_4.php");
@@ -1204,6 +1314,7 @@ public class CallActivity extends AppCompatActivity {
         mainHandler.removeCallbacks(statsLoopRunnable);
         pollExecutor.shutdownNow();
         networkExecutor.shutdownNow();
+        logAudioManagerState("hangup_before_restore");
 
         try {
             if (videoCapturer != null) {
@@ -1226,6 +1337,7 @@ public class CallActivity extends AppCompatActivity {
         if (localRenderer != null) localRenderer.release();
         if (eglBase != null) eglBase.release();
         restoreAudioMode();
+        logAudioManagerState("hangup_after_restore");
 
         super.onDestroy();
     }
