@@ -48,18 +48,6 @@ function Invoke-GhJson([string[]]$GhArgs) {
 }
 
 function Get-RunArtifacts([string]$RepoName, [string]$RunId) {
-    try {
-        $view = Invoke-GhJson @(
-            "run", "view", "$RunId",
-            "--repo", $RepoName,
-            "--json", "artifacts"
-        )
-        if ($view -and $view.artifacts) {
-            return @($view.artifacts)
-        }
-    } catch {
-    }
-
     $api = Invoke-GhJson @(
         "api",
         "-H", "Accept: application/vnd.github+json",
